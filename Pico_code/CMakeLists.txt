@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.11)
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 # Set name of the project (as PROJECT_NAME) and C/C++ standards
-project(blink C CXX ASM)
+project(pico_mini_db C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -24,6 +24,7 @@ pico_add_extra_outputs(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
     hardware_adc
+    pico_rand
 )
 
 # Enable usb output, disable uart output
