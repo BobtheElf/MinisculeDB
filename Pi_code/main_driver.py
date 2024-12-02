@@ -31,11 +31,11 @@ def wait_for_usb_devices(num_devices_left, whitelist):
         for device in devices:
             if device[23 : 32] not in whitelist:
                 new_device = True
-                whitelist.append(device)
-                picos.append(device)
+                whitelist.append(device[23 : 32])
+                picos.append(device[23 : 32])
                 picos = picos + wait_for_usb_devices(num_devices_left - 1, whitelist)
+                print("New Device Detected: %s", device)
                 break
-    print("New Device Detected: %s", device)
     return picos
 # ============================================================
 
