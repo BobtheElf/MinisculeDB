@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "pico/rand.h"
+#include "tusb.h"
 
 #define POTENTIOMETER_PIN 26  // GPIO pin connected to the potentiometer
 #define BUTTON_PIN 15         // GPIO pin connected to the push button
@@ -47,13 +48,32 @@ TODO:
 //     }
 // }
 
+// This function's code is from: https://blog.smittytone.net/2021/10/31/how-to-send-data-to-a-raspberry-pi-pico-via-usb/
+uint16_t get_block(uint8_t *buffer) {
+  uint16_t buffer_index= 0;
+  while (true) {
+    int c = getchar_timeout_us(100);
+    if (c != PICO_ERROR_TIMEOUT && buffer_index < BUFFER_SIZE) {
+      buffer[buffer_index++] = (c & 0x1FF);
+    } else {
+      break;
+    }
+  }
+  return buffer_index;
+}
+
+bool buf_comp(uint8_t *buf1, uint8_t *buf2, int len){
+    for(int i = 0; i < len; i++){
+        if(buf1[i] != buf2[i]){
+            return true;
+        }
+    }
+    return false;
+}
+
 int main(){
     // Array to store the data
     struct DataPoint data[ARRAY_SIZE];
-
-    // Create a buffer to store the input string
-    char input_buffer[BUFFER_SIZE];
-    int buffer_index = 0;
 
     //Initialize chosen serial port
     stdio_init_all();
@@ -80,35 +100,68 @@ int main(){
     //Keep track of the indices that need to be changed
     int loop_var = 0;
     
-    
+     // Create a buffer to store the input string
+    char input_buffer[BUFFER_SIZE];
+    int buffer_index = 0;
+    char last_buffer[BUFFER_SIZE];
+    int last_buffer_index = 0;
 
     //Loop forever
     while(true){
 
-        //Blink LED
-        printf("Pico ID: 0x%08X\r\n", pico_id);
-        gpio_put(LED_PIN, true);
-        sleep_ms(1500);
-        gpio_put(LED_PIN, false);
-
-        //Collect data from the Pico
-        data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
-        data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
-        data[loop_var].led_on = true;
-
-        //Code for displaying new data collected
-        printf("Reading %d: Potentiometer = %u, Button = %s\n", 
-               loop_var, 
-               data[loop_var].potentiometer_value, 
-               data[loop_var].button_pressed ? "Pressed" : "Released");
-
-        //Code for maybe deleting points to keep memory here
-
-        //Go to the next loop value
-        loop_var ++;
-        if(loop_var >= ARRAY_SIZE){
-            loop_var = 0;
+        //Echo
+        int read_until = get_block(input_buffer); //returns final index of the buffer
+        //Only echo if the input buffer and last buffer read are different
+        bool is_different = false;
+        if(read_until == last_buffer_index){
+            is_different = buf_comp(last_buffer, input_buffer, read_until);
         }
+        else{
+            is_different = true;
+        }
+        if(is_different){
+            //Make sure to clean out the buffer - get block can create garbage
+            for(int i = read_until; i < BUFFER_SIZE; i++){
+                input_buffer[i] = 0;
+            }
+            printf("%s\n", input_buffer);
+            //Copy data from the input buffer to the last buffer to see if they are the same
+            for(int i = 0; i < read_until; i++){
+                last_buffer[i] = input_buffer[i];
+            }
+        }
+
+        //Wait for a HELO from the message
+        char *helomsg = {'H', 'E', 'L', 'O'};
+
+        if((read_until == 4) && (buf_comp(helomsg, input_buffer, read_until))){
+            printf("Salutations\n");
+        }
+
+        // //Blink LED
+        // printf("Pico ID: 0x%08X\r\n", pico_id);
+        // gpio_put(LED_PIN, true);
+        // sleep_ms(1500);
+        // gpio_put(LED_PIN, false);
+
+        // //Collect data from the Pico
+        // data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
+        // data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
+        // data[loop_var].led_on = true;
+
+        // //Code for displaying new data collected
+        // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
+        //        loop_var, 
+        //        data[loop_var].potentiometer_value, 
+        //        data[loop_var].button_pressed ? "Pressed" : "Released");
+
+        // //Code for maybe deleting points to keep memory here
+
+        // //Go to the next loop value
+        // loop_var ++;
+        // if(loop_var >= ARRAY_SIZE){
+        //     loop_var = 0;
+        // }
 
         // sleep_ms(500);
         // scanf("%s", input_buffer);
