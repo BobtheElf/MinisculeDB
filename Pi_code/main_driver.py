@@ -52,15 +52,16 @@ whitelist = ['1d6b:0003',
             '1d6b:0002']
 
 picos = wait_for_usb_devices(6, whitelist)
-try:
-    ser = serial.Serial('/dev/ttyACM0', 9600, timeout = 10)
-    print("Connection successful")
-except:
-    print("Device not connected")
-#listen for input like on Google
-while True:
-    line = ser.readline()
-    if len(line) == 0:
-        print("Nothing to see here")
-    else:
-        print(line)
+print("All devices found!")
+# try:
+#     ser = serial.Serial('/dev/ttyACM0', 9600, timeout = 10)
+#     print("Connection successful")
+# except:
+#     print("Device not connected")
+# #listen for input like on Google
+# while True:
+#     line = ser.readline()
+#     if len(line) == 0:
+#         print("Nothing to see here")
+#     else:
+#         print(line)

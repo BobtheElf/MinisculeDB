@@ -27,9 +27,33 @@ TODO:
 5. Parameters: Unsolved - Pi level vs Pico level query processing - epochs
 */
 
+// void handleChars(){
+//     // Create a buffer to store the input string
+//     char input_buffer[BUFFER_SIZE];
+//     int buffer_index = 0;
+//     char c = getchar(); // Read a single character
+                
+//     // Check for the end of the input (newline or buffer full)
+//     if (c == '\n' || c == '\r' || buffer_index >= BUFFER_SIZE - 1) {
+//         input_buffer[buffer_index] = '\0'; // Null-terminate the string
+//         printf("Received: %s\n", input_buffer);
+
+//         // Reset the buffer for the next input
+//         buffer_index = 0;
+//         printf("Type another message and press Enter:\n");
+//     } else {
+//         // Store the character in the buffer
+//         input_buffer[buffer_index++] = c;
+//     }
+// }
+
 int main(){
     // Array to store the data
     struct DataPoint data[ARRAY_SIZE];
+
+    // Create a buffer to store the input string
+    char input_buffer[BUFFER_SIZE];
+    int buffer_index = 0;
 
     //Initialize chosen serial port
     stdio_init_all();
@@ -56,37 +80,17 @@ int main(){
     //Keep track of the indices that need to be changed
     int loop_var = 0;
     
-    // Create a buffer to store the input string
-    char input_buffer[BUFFER_SIZE];
-    int buffer_index = 0;
+    
 
     //Loop forever
     while(true){
-
-        // Check if there is data available on the serial input
-        if (stdio_usb_connected()) {
-            char c = getchar(); // Read a single character
-            
-            // Check for the end of the input (newline or buffer full)
-            if (c == '\n' || c == '\r' || buffer_index >= BUFFER_SIZE - 1) {
-                input_buffer[buffer_index] = '\0'; // Null-terminate the string
-                printf("Received: %s\n", input_buffer);
-
-                // Reset the buffer for the next input
-                buffer_index = 0;
-                printf("Type another message and press Enter:\n");
-            } else {
-                // Store the character in the buffer
-                input_buffer[buffer_index++] = c;
-            }
-        }
 
         //Blink LED
         printf("Pico ID: 0x%08X\r\n", pico_id);
         gpio_put(LED_PIN, true);
         sleep_ms(1500);
         gpio_put(LED_PIN, false);
-        
+
         //Collect data from the Pico
         data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
         data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
@@ -105,7 +109,10 @@ int main(){
         if(loop_var >= ARRAY_SIZE){
             loop_var = 0;
         }
-        sleep_ms(20);
+
+        // sleep_ms(500);
+        // scanf("%s", input_buffer);
+        // printf("%s\n", input_buffer);
     }
 
     return(0);
