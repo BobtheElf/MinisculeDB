@@ -17,7 +17,7 @@
 
 // Struct to hold potentiometer and button status
 struct DataPoint {
-    long int ms_time;               // Timestamp in ms
+    uint32_t ms_time;               // Timestamp in ms
     uint16_t potentiometer_value;   // ADC value
     bool button_pressed;            // Button status
     bool led_on;                    // LED status
@@ -58,8 +58,8 @@ bool buf_comp(uint8_t *buf1, uint8_t *buf2, int len){
 
 //Comparison functions for ORDER BY
 int compareDPTime(const void* a, const void* b){
-    uint64_t x = ((struct DataPoint*) a) -> ms_time;
-    uint64_t y = ((struct DataPoint*) b) -> ms_time;
+    uint32_t x = ((struct DataPoint*) a) -> ms_time;
+    uint32_t y = ((struct DataPoint*) b) -> ms_time;
     if (x < y) return -1;
     if (x > y) return 1;
     return 0;
@@ -123,12 +123,12 @@ int main(){
     bool collect = true;
 
     //Time to reference when measuring time since start
-    uint64_t start = time_us_64();
-    uint64_t end = time_us_64();
-    uint64_t ms_used = time_us_64();
-    uint64_t loop_start = time_us_64();
-    uint64_t loop_end = time_us_64();
-    uint64_t loop_time = time_us_64();
+    uint32_t start = time_us_32();
+    uint32_t end = time_us_32();
+    uint32_t ms_used = time_us_32();
+    uint32_t loop_start = time_us_32();
+    uint32_t loop_end = time_us_32();
+    uint32_t loop_time = time_us_32();
 
     //For testing
     double cur_variance_sum = 0;
@@ -151,7 +151,7 @@ int main(){
 
         //----------------------------------------------------------------------------------------------------
         //Housekeeping for the start of every loop
-        loop_start = time_us_64();
+        loop_start = time_us_32();
         //Keep LED on for the duration of one loop - duty cycle is a good indication of how hard it's working
         gpio_put(LED_PIN, true);
         //Recalculate at the start of every loop
@@ -195,24 +195,22 @@ int main(){
 
         //If the message is HELO send the Pico's id for communication - may be useful for broadcast information
         if((read_until == 4) && !(buf_comp(helomsg, input_buffer, read_until))){
-            end = time_us_64();
-            ms_used = end - start;
-            printf("Pico ID: 0x%08X\nTime: %lu\nEHLO\n", pico_id, ms_used);
+            ms_used = time_us_32();
+            printf("Pico ID: 0x%08X\nTime: %u\nEHLO\n", pico_id, ms_used);
         }
         //If the message is TIME send the current loop duration - may be useful for synchronizing the epochs
         if((read_until == 4) && !(buf_comp(timemsg, input_buffer, read_until))){
-            printf("Loop Time: %lu %lu %lu\n", loop_time, loop_end, loop_start);
+            printf("Loop Time: %u %u %u\n", loop_time, loop_end, loop_start);
         }
         //If the message is DUMP send the data - may be useful for debugging and such
         if((read_until == 4) && !(buf_comp(dumpmsg, input_buffer, read_until))){
-            end = time_us_64();
-            ms_used = end - start;
+            ms_used = time_us_32();
             // if(cur_variance_sum != 0.0){
             //     printf("Current variance sum: %f\n", cur_variance_sum);
             // }
-            printf("Dumping %d lines\nTime: %lu\n", arr_len, ms_used);
+            printf("Dumping %d lines\nTime: %u\n", arr_len, ms_used);
             for(int i = 0; i < arr_len; i++){
-                printf("Index: %d\tTimestamp: %lu\tPotentiometer %u\tButton: %d\tLED: %d\n",
+                printf("Index: %d\tTimestamp: %u\tPotentiometer %u\tButton: %d\tLED: %d\n",
                 i, data[i].ms_time, data[i].potentiometer_value, data[i].button_pressed, data[i].led_on);
             }
         }
@@ -346,16 +344,14 @@ int main(){
         }
         //If the message is PAUSE turn the collect flag off - useful for debugging and getting snapshots of the pico
         if((read_until == 5) && !(buf_comp(pausemsg, input_buffer, read_until))){
-            end = time_us_64();
-            ms_used = end - start;
-            printf("Collection paused\nTime: %lu\n", ms_used);
+            ms_used = time_us_32();
+            printf("Collection paused\nTime: %u\n", ms_used);
             collect = false;
         }
         //If the message is GO turn the collect flag on - useful for allowing the pico to run after a pause
         if((read_until == 2) && !(buf_comp(gomsg, input_buffer, read_until))){
-            end = time_us_64();
-            ms_used = end - start;
-            printf("Collection resumed\nTime: %lu\n", ms_used);
+            ms_used = time_us_32();
+            printf("Collection resumed\nTime: %u\n", ms_used);
             collect = true;
         }
         //----------------------------------------------------------------------------------------------------
@@ -703,7 +699,7 @@ int main(){
             for(int i = 0; i < count; i ++){
                 struct DataPoint point = pool[i];
                 if(select_subj >= 1000){
-                    printf("%lu", point.ms_time);
+                    printf("%u", point.ms_time);
                     if((select_subj - 1000) > 0){
                         printf(", ");
                     }
@@ -743,9 +739,7 @@ int main(){
             data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
             data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
             data[loop_var].led_on = true;                               // Set the value of the led to either boolean variable
-            
-            end = time_us_64();
-            data[loop_var].ms_time = end - start;                       // Read the timestamp in ms since the start of the program
+            data[loop_var].ms_time = time_us_32();                       // Read the timestamp in ms since the start of the program
 
             //Code for displaying new data collected
             // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
@@ -787,7 +781,7 @@ int main(){
         //Housekeeping for the end of the loop
         //After all processes are complete, sleep the LED for the downtime
         gpio_put(LED_PIN, false);
-        loop_end = time_us_64();
+        loop_end = time_us_32();
         loop_time = loop_end - loop_start;
         //----------------------------------------------------------------------------------------------------
         sleep_ms(MS_BT_LOOP);
