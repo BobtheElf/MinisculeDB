@@ -199,7 +199,7 @@ int main(){
             ms_used = end - start;
             printf("Pico ID: 0x%08X\nTime: %lu\nEHLO\n", pico_id, ms_used);
         }
-        //If the message is TIME send the current timestamp - may be useful for synchronizing the epochs
+        //If the message is TIME send the current loop duration - may be useful for synchronizing the epochs
         if((read_until == 4) && !(buf_comp(timemsg, input_buffer, read_until))){
             printf("Loop Time: %lu %lu %lu\n", loop_time, loop_end, loop_start);
         }
