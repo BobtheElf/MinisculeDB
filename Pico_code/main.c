@@ -4,6 +4,8 @@
 #include "pico/rand.h"
 #include <pico/time.h>
 #include <stdlib.h>
+#include <ctype.h>
+// #include <string.h>
 
 #define POTENTIOMETER_PIN 26  // GPIO pin connected to the potentiometer
 #define BUTTON_PIN 15         // GPIO pin connected to the push button
@@ -101,6 +103,18 @@ int main(){
     //For testing
     double cur_variance_sum = 0;
 
+    //Query attributes
+    bool select = false;
+    int select_subj = 0;
+    bool where = false;
+    int where_var = 0;
+    char where_op = 0; //0 - x, 1 - <, 2 - >, 3 - =, 4 - <=, 5 - >=, 6 - <>
+    int where_val = 0;
+    bool orderby = false;
+    int orderby_pred = 0;
+    //Grammar I guess: SELECT [var](,[var])?(,[var])?(,[var])?( WHERE [var][op][value])( ORDER BY [var](,[var])?(,[var])?(,[var])?)?
+    //Valid var names: "time" - ms_time; "potv" - potentiometer_value; "butp" - button_pressed; "ledo" - led_on
+
     //Loop forever
     while(true){
 
@@ -125,8 +139,8 @@ int main(){
                 last_buffer[i] = 0;
             }
             //Uncomment for echoing the output
-            printf("Echo: %s\n", input_buffer);
-            //Copy data from the input buffer to the last buffer to see if they are the same
+            // printf("Echo: %s\n", input_buffer);
+            //Copy data from the input buffer to the last buffer so that they are the same
             for(int i = 0; i < read_until; i++){
                 last_buffer[i] = input_buffer[i];
             }
@@ -149,12 +163,136 @@ int main(){
             end = time_us_64();
             uint64_t ms_used = end - start;
             printf("Current variance sum: %f\n", cur_variance_sum);
-            printf("Pico ID: 0x%08X\nTime: %ld\nDumping %d lines\n", pico_id, ms_used, arr_size);
             int s = arr_size > ARRAY_SIZE ? ARRAY_SIZE : arr_size;
+            printf("Pico ID: 0x%08X\nTime: %ld\nDumping %d lines\n", pico_id, ms_used, s);
             for(int i = 0; i < s; i++){
                 printf("Index: %d\tTimestamp: %ld\tPotentiometer %d\tButton: %d\tLED: %d\n",
                 i, data[i].ms_time, data[i].potentiometer_value, data[i].button_pressed, data[i].led_on);
             }
+        }
+        //Else determine if it is a query - only so much checking I'm going to do here
+        if((read_until > 6) && !(buf_comp(query, input_buffer, 6))){
+            int cur_idx = 7;
+            select = false;
+            select_subj = 0;
+            where = false;
+            where_var = 0;
+            where_op = 0; //0 - x, 1 - <, 2 - >, 3 - =, 4 - <=, 5 - >=, 6 - <>
+            where_val = 0;
+            orderby = false;
+            orderby_pred = 0;
+            bool wherec = false;
+            while(cur_idx < read_until){
+                // printf("Iteration through the cur_idx %d\n", cur_idx);
+                if(!select){
+                    if((input_buffer[cur_idx] == ' ') && (input_buffer[cur_idx + 1] == 'W')){
+                        cur_idx += 7;
+                        select = true;
+                        where = true;
+                    }
+                    else if((input_buffer[cur_idx] == ' ') && (input_buffer[cur_idx + 1] == 'O')){
+                        cur_idx += 10;
+                        select = true;
+                        wherec = true;
+                        orderby = true;
+                    }
+                    else if(input_buffer[cur_idx] == 't'){
+                        select_subj += 1000;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'p'){
+                        select_subj += 100;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'b'){
+                        select_subj += 10;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'l'){
+                        select_subj += 1;
+                        cur_idx += 4;
+                    }
+                    else{
+                        cur_idx ++; //I think this technically means that anything could be a valid query
+                    }
+                }
+                else if(!wherec){
+                    //End of where clause
+                    if((input_buffer[cur_idx] == ' ') && (input_buffer[cur_idx + 1] == 'O')){
+                        cur_idx += 10;
+                        orderby = true;
+                        wherec = true;
+                    }
+                    //Where clause operand
+                    else if(input_buffer[cur_idx] == 't'){
+                        where_var += 1000;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'p'){
+                        where_var += 100;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'b'){
+                        where_var += 10;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'l'){
+                        where_var += 1;
+                        cur_idx += 4;
+                    }
+                    //Where clause operator
+                    else if((input_buffer[cur_idx] == '<') && (input_buffer[cur_idx + 1] == '>')){
+                        where_op = 6;
+                        cur_idx += 2;
+                    }
+                    else if((input_buffer[cur_idx] == '<') && (input_buffer[cur_idx + 1] != '>')){
+                        where_op = 1;
+                        cur_idx ++;
+                    }
+                    else if(input_buffer[cur_idx] == '>'){
+                        where_op = 2;
+                        cur_idx ++;
+                    }
+                    else if(input_buffer[cur_idx] == '='){
+                        where_op += 3;
+                        cur_idx ++;
+                    }
+                    //Where clause value
+                    else if(isdigit(input_buffer[cur_idx])){
+                        where_val *= 10;
+                        where_val += input_buffer[cur_idx] - 48; //Just subtract the ascii value of the character
+                        cur_idx ++;
+                    }
+                    else{
+                        cur_idx ++;
+                    }
+                }
+                else{
+                    if(input_buffer[cur_idx] == 't'){
+                        orderby_pred += 1000;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'p'){
+                        orderby_pred += 100;
+                        orderby = true;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'b'){
+                        orderby_pred += 10;
+                        orderby = true;
+                        cur_idx += 4;
+                    }
+                    else if(input_buffer[cur_idx] == 'l'){
+                        orderby_pred += 1;
+                        orderby = true;
+                        cur_idx += 4;
+                    }
+                    else{
+                        cur_idx ++; //I think this technically means that anything could be a valid query
+                    }
+                }
+            }
+            printf("Result: %d, %d, %d, %d, %d, %d, %d, %d\n", select, select_subj, where, where_var, where_op, where_val, orderby, orderby_pred);
         }
         //----------------------------------------------------------------------------------------------------
 
@@ -162,10 +300,10 @@ int main(){
         //Collect data from the Pico
         data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
         data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
-        data[loop_var].led_on = true;
+        data[loop_var].led_on = true;                               // Set the value of the led to either boolean variable
         
         end = time_us_64();
-        data[loop_var].ms_time = end - start;
+        data[loop_var].ms_time = end - start;                       // Read the timestamp in ms since the start of the program
 
         //Code for displaying new data collected
         // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
