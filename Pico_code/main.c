@@ -58,10 +58,18 @@ bool buf_comp(uint8_t *buf1, uint8_t *buf2, int len){
 
 //Comparison functions for ORDER BY
 int compareDPTime(const void* a, const void* b){
-    return ((struct DataPoint*) a) -> ms_time - ((struct DataPoint*) b) -> ms_time;
+    uint64_t x = ((struct DataPoint*) a) -> ms_time;
+    uint64_t y = ((struct DataPoint*) b) -> ms_time;
+    if (x < y) return -1;
+    if (x > y) return 1;
+    return 0;
 }
 int compareDPPot(const void* a, const void* b){
-    return ((struct DataPoint*) a) -> potentiometer_value - ((struct DataPoint*) b) -> potentiometer_value;
+    uint16_t x = ((struct DataPoint*) a) -> potentiometer_value;
+    uint16_t y = ((struct DataPoint*) b) -> potentiometer_value;
+    if (x < y) return -1;
+    if (x > y) return 1;
+    return 0;
 }
 int compareDPBut(const void* a, const void* b){
     return ((struct DataPoint*) a) -> button_pressed - ((struct DataPoint*) b) -> button_pressed;
@@ -111,6 +119,8 @@ int main(){
 
     //Initiate communication with the Pi flag
     bool speak = false;
+    //Allow or prevent data collection
+    bool collect = true;
 
     //Time to reference when measuring time since start
     uint64_t start = time_us_64();
@@ -180,6 +190,8 @@ int main(){
         char *timemsg = "TIME";
         char *dumpmsg = "DUMP";
         char *querymsg = "SELECT";
+        char *pausemsg = "PAUSE";
+        char *gomsg = "GO";
 
         //If the message is HELO send the Pico's id for communication - may be useful for broadcast information
         if((read_until == 4) && !(buf_comp(helomsg, input_buffer, read_until))){
@@ -195,10 +207,12 @@ int main(){
         if((read_until == 4) && !(buf_comp(dumpmsg, input_buffer, read_until))){
             end = time_us_64();
             ms_used = end - start;
-            // printf("Current variance sum: %f\n", cur_variance_sum);
-            printf("Pico ID: 0x%08X\nTime: %lu\nDumping %d lines\n", pico_id, ms_used, arr_len);
+            // if(cur_variance_sum != 0.0){
+            //     printf("Current variance sum: %f\n", cur_variance_sum);
+            // }
+            printf("Dumping %d lines\nTime: %lu\n", arr_len, ms_used);
             for(int i = 0; i < arr_len; i++){
-                printf("Index: %d\tTimestamp: %lu\tPotentiometer %d\tButton: %d\tLED: %d\n",
+                printf("Index: %d\tTimestamp: %lu\tPotentiometer %u\tButton: %d\tLED: %d\n",
                 i, data[i].ms_time, data[i].potentiometer_value, data[i].button_pressed, data[i].led_on);
             }
         }
@@ -328,28 +342,45 @@ int main(){
                     }
                 }
             }
-            printf("Result: %d, %d, %d, %d, %d, %d, %d, %d\n", select, select_subj, where, where_var, where_op, where_val, orderby, orderby_pred);
+            // printf("Result: %d, %d, %d, %d, %d, %d, %d, %d\n", select, select_subj, where, where_var, where_op, where_val, orderby, orderby_pred);
+        }
+        //If the message is PAUSE turn the collect flag off - useful for debugging and getting snapshots of the pico
+        if((read_until == 5) && !(buf_comp(pausemsg, input_buffer, read_until))){
+            end = time_us_64();
+            ms_used = end - start;
+            printf("Collection paused\nTime: %lu\n", ms_used);
+            collect = false;
+        }
+        //If the message is GO turn the collect flag on - useful for allowing the pico to run after a pause
+        if((read_until == 2) && !(buf_comp(gomsg, input_buffer, read_until))){
+            end = time_us_64();
+            ms_used = end - start;
+            printf("Collection resumed\nTime: %lu\n", ms_used);
+            collect = true;
         }
         //----------------------------------------------------------------------------------------------------
 
         //----------------------------------------------------------------------------------------------------
         //Parse SQL logic
         if(select){
-            printf("Parsing\n");
+            // printf("Parsing\n");
             struct DataPoint pool[ARRAY_SIZE]; //Super lazy and space-consuming, but that is a later fix
             int count = 0;
             //Test for funzies
-            pool[0] = data[0];
-            printf("%lu:%lu; %d:%d; %d:%d; %d:%d\n", pool[0].ms_time, data[0].ms_time, pool[0].potentiometer_value, 
-            data[0].potentiometer_value, pool[0].button_pressed, data[0].button_pressed, pool[0].led_on, data[0].led_on);
+            // pool[0] = data[0];
+            // printf("%lu:%lu; %d:%d; %d:%d; %d:%d\n", pool[0].ms_time, data[0].ms_time, pool[0].potentiometer_value, 
+            // data[0].potentiometer_value, pool[0].button_pressed, data[0].button_pressed, pool[0].led_on, data[0].led_on);
             if(where){
-                printf("Interpreting WHERE clause\n");
+                // printf("Interpreting WHERE clause\n");
                 //Interpret the where clause - whereval is given, operator needs to be translated
                 if(where_var == 1000){
                     if(where_op == 1){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time < where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -357,7 +388,10 @@ int main(){
                     if(where_op == 2){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time > where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -365,7 +399,10 @@ int main(){
                     if(where_op == 3){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time == where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -373,7 +410,10 @@ int main(){
                     if(where_op == 4){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time <= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -381,7 +421,10 @@ int main(){
                     if(where_op == 5){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time >= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -389,7 +432,10 @@ int main(){
                     if(where_op == 6){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].ms_time != where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -399,7 +445,10 @@ int main(){
                     if(where_op == 1){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value < where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -407,7 +456,10 @@ int main(){
                     if(where_op == 2){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value > where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -415,7 +467,10 @@ int main(){
                     if(where_op == 3){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value == where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -423,7 +478,10 @@ int main(){
                     if(where_op == 4){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value <= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -431,7 +489,10 @@ int main(){
                     if(where_op == 5){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value >= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -439,7 +500,10 @@ int main(){
                     if(where_op == 6){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].potentiometer_value != where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -449,7 +513,10 @@ int main(){
                     if(where_op == 1){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed < where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -457,7 +524,10 @@ int main(){
                     if(where_op == 2){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed > where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -465,7 +535,10 @@ int main(){
                     if(where_op == 3){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed == where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -473,7 +546,10 @@ int main(){
                     if(where_op == 4){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed <= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -481,7 +557,10 @@ int main(){
                     if(where_op == 5){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed >= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -489,7 +568,10 @@ int main(){
                     if(where_op == 6){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].button_pressed != where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -499,7 +581,10 @@ int main(){
                     if(where_op == 1){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on < where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -507,7 +592,10 @@ int main(){
                     if(where_op == 2){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on > where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -515,7 +603,10 @@ int main(){
                     if(where_op == 3){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on == where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -523,7 +614,10 @@ int main(){
                     if(where_op == 4){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on <= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -531,7 +625,10 @@ int main(){
                     if(where_op == 5){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on >= where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
@@ -539,23 +636,28 @@ int main(){
                     if(where_op == 6){
                         for(int i = 0; i < arr_len; i++){
                             if(data[i].led_on != where_val){
-                                pool[i] = data[i];
+                                pool[i].ms_time = data[i].ms_time;
+                                pool[i].potentiometer_value = data[i].potentiometer_value;
+                                pool[i].button_pressed = data[i].button_pressed;
+                                pool[i].led_on = data[i].led_on;
                                 count ++;
                             }
                         }
                     }
                 }
-                
             }
             else{
-                printf("Skipping WHERE clause\n");
+                // printf("Skipping WHERE clause\n");
                 count = arr_len;
                 for(int i = 0; i < arr_len; i++){
-                    pool[i] = data[i];
+                    pool[i].ms_time = data[i].ms_time;
+                    pool[i].potentiometer_value = data[i].potentiometer_value;
+                    pool[i].button_pressed = data[i].button_pressed;
+                    pool[i].led_on = data[i].led_on;
                 }
             }
             if(orderby){
-                printf("Interpreting ORDER BY\n");
+                // printf("Interpreting ORDER BY\n");
                 //I am not sure how to do mappings, so I guess I am just going to have to repeat myself a bunch of times again
                 if((orderby_pred % 10) == 1){
                     qsort(pool, count, sizeof(struct DataPoint), &compareDPLed);
@@ -571,10 +673,10 @@ int main(){
                 }
             }
             else{
-                printf("Skipping ORDER BY\n");
+                // printf("Skipping ORDER BY\n");
             }
             //Projection last - actually printed
-            printf("Projecting %d over array size %d\n", select_subj, count);
+            printf("Projecting over array size %d\n", count);
             //Printing headers
             if(select_subj >= 1000){
                 printf("time");
@@ -607,7 +709,7 @@ int main(){
                     }
                 }
                 if((select_subj % 1000) >= 100){
-                    printf("%d", point.potentiometer_value);
+                    printf("%u", point.potentiometer_value);
                     if(((select_subj % 1000) - 100) > 0){
                         printf(", ");
                     }
@@ -637,47 +739,47 @@ int main(){
 
         //----------------------------------------------------------------------------------------------------
         //Collect data from the Pico
-        data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
-        data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
-        data[loop_var].led_on = true;                               // Set the value of the led to either boolean variable
-        
-        end = time_us_64();
-        data[loop_var].ms_time = end - start;                       // Read the timestamp in ms since the start of the program
+        if(collect){
+            data[loop_var].potentiometer_value = adc_read();            // Read potentiometer
+            data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
+            data[loop_var].led_on = true;                               // Set the value of the led to either boolean variable
+            
+            end = time_us_64();
+            data[loop_var].ms_time = end - start;                       // Read the timestamp in ms since the start of the program
 
-        //Code for displaying new data collected
-        // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
-        //        loop_var, 
-        //        data[loop_var].potentiometer_value, 
-        //        data[loop_var].button_pressed ? "Pressed" : "Released");
+            //Code for displaying new data collected
+            // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
+            //        loop_var, 
+            //        data[loop_var].potentiometer_value, 
+            //        data[loop_var].button_pressed ? "Pressed" : "Released");
 
-        //Code for maybe deleting points to keep memory here
+            //Go to the next loop value
+            loop_var ++;
+            num_samples ++;
+            cur_variance_sum = 0;
+            if(num_samples >= ARRAY_SIZE){
+                //Delete a value which is where the loop_var will insert the new value - point with the smallest distance from the mean
 
-        //Go to the next loop value
-        loop_var ++;
-        num_samples ++;
-        cur_variance_sum = 0;
-        if(num_samples >= ARRAY_SIZE){
-            //Delete a value which is where the loop_var will insert the new value - point with the smallest distance from the mean
-
-            //Calculate the mean
-            double pot_sum = data[0].potentiometer_value;
-            for(int i = 1; i < ARRAY_SIZE; i++){
-                pot_sum += data[i].potentiometer_value;
-            }
-            double mean = pot_sum / ARRAY_SIZE;
-            //Find the last closest value 
-            int idx = 0;
-            double distance = abs(data[0].potentiometer_value - mean);
-            cur_variance_sum += distance;
-            for(int i = 1; i < ARRAY_SIZE; i++){
-                double cur_dist = abs(data[i].potentiometer_value - mean);
-                if(cur_dist <= distance){
-                    idx = i;
-                    distance = cur_dist;
+                //Calculate the mean
+                double pot_sum = data[0].potentiometer_value;
+                for(int i = 1; i < ARRAY_SIZE; i++){
+                    pot_sum += data[i].potentiometer_value;
                 }
-                cur_variance_sum += cur_dist;
+                double mean = pot_sum / ARRAY_SIZE;
+                //Find the last closest value 
+                int idx = 0;
+                double distance = abs(data[0].potentiometer_value - mean);
+                cur_variance_sum += distance;
+                for(int i = 1; i < ARRAY_SIZE; i++){
+                    double cur_dist = abs(data[i].potentiometer_value - mean);
+                    if(cur_dist <= distance){
+                        idx = i;
+                        distance = cur_dist;
+                    }
+                    cur_variance_sum += cur_dist;
+                }
+                loop_var = idx; //Doesn't technically delete it, but will replace the values in data[loop_var] so it is good enough
             }
-            loop_var = idx; //Doesn't technically delete it, but will replace the values in data[loop_var] so it is good enough
         }
         //----------------------------------------------------------------------------------------------------
 
@@ -686,7 +788,7 @@ int main(){
         //After all processes are complete, sleep the LED for the downtime
         gpio_put(LED_PIN, false);
         loop_end = time_us_64();
-        loop_time = loop_start - loop_end;
+        loop_time = loop_end - loop_start;
         //----------------------------------------------------------------------------------------------------
         sleep_ms(MS_BT_LOOP);
     }
