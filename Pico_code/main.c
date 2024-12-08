@@ -3,21 +3,22 @@
 #include "hardware/adc.h"
 #include "pico/rand.h"
 #include <pico/time.h>
+#include <stdlib.h>
 
 #define POTENTIOMETER_PIN 26  // GPIO pin connected to the potentiometer
 #define BUTTON_PIN 15         // GPIO pin connected to the push button
 #define LED_PIN 25
-#define ARRAY_SIZE 100       // Number of readings to store
+#define ARRAY_SIZE 500       // Number of readings to store
 // Buffer size for the input string
 #define BUFFER_SIZE 128
 #define MS_BT_LOOP 100
 
 // Struct to hold potentiometer and button status
 struct DataPoint {
+    long int ms_time;               // Timestamp in ms
     uint16_t potentiometer_value;   // ADC value
     bool button_pressed;            // Button status
     bool led_on;                    // LED status
-    long int ms_time;               // Timestamp in ms
 };
 
 /*
@@ -81,6 +82,8 @@ int main(){
 
     //Keep track of the indices that need to be changed
     int loop_var = 0;
+    //Keep track of the size of the array
+    int arr_size = 0;
     
     // Create a buffer to store the input string
     char input_buffer[BUFFER_SIZE];
@@ -93,9 +96,10 @@ int main(){
 
     //Time to reference when measuring time since start
     uint64_t start = time_us_64();
+    uint64_t end = 0;
 
-    //Rank array for data points
-    int rank[ARRAY_SIZE];
+    //For testing
+    double cur_variance_sum = 0;
 
     //Loop forever
     while(true){
@@ -132,12 +136,25 @@ int main(){
         char *helomsg = "HELO";
         char *timemsg = "TIME";
         char *query = "SELECT";
+        char *dump = "DUMP";
 
         //If the message is HELO send the Pico's id for communication - may be useful for broadcast information
         if((read_until == 4) && !(buf_comp(helomsg, input_buffer, read_until))){
-            uint64_t end = time_us_64();
+            end = time_us_64();
             uint64_t ms_used = end - start;
-            printf("Pico ID: 0x%08X\nTime: %d", pico_id, ms_used);
+            printf("Pico ID: 0x%08X\nTime: %ld\nHELO\n", pico_id, ms_used);
+        }
+        //If the message is DUMP send the data - may be useful for debugging and such
+        if((read_until == 4) && !(buf_comp(dump, input_buffer, read_until))){
+            end = time_us_64();
+            uint64_t ms_used = end - start;
+            printf("Current variance sum: %f\n", cur_variance_sum);
+            printf("Pico ID: 0x%08X\nTime: %ld\nDumping %d lines\n", pico_id, ms_used, arr_size);
+            int s = arr_size > ARRAY_SIZE ? ARRAY_SIZE : arr_size;
+            for(int i = 0; i < s; i++){
+                printf("Index: %d\tTimestamp: %ld\tPotentiometer %d\tButton: %d\tLED: %d\n",
+                i, data[i].ms_time, data[i].potentiometer_value, data[i].button_pressed, data[i].led_on);
+            }
         }
         //----------------------------------------------------------------------------------------------------
 
@@ -147,8 +164,8 @@ int main(){
         data[loop_var].button_pressed = gpio_get(BUTTON_PIN) == 0;  // Read button (active low)
         data[loop_var].led_on = true;
         
-        //Get timestamp in ms - taken from https://stackoverflow.com/questions/3756323/how-to-get-the-current-time-in-milliseconds-from-c-in-linux
-        data[loop_var].ms_time = (long int) get_absolute_time;
+        end = time_us_64();
+        data[loop_var].ms_time = end - start;
 
         //Code for displaying new data collected
         // printf("Reading %d: Potentiometer = %u, Button = %s\n", 
@@ -160,8 +177,30 @@ int main(){
 
         //Go to the next loop value
         loop_var ++;
-        if(loop_var >= ARRAY_SIZE){
-            loop_var = 0;
+        arr_size ++;
+        cur_variance_sum = 0;
+        if(arr_size >= ARRAY_SIZE){
+            //Delete a value which is where the loop_var will insert the new value - point with the smallest distance from the mean
+
+            //Calculate the mean
+            double pot_sum = data[0].potentiometer_value;
+            for(int i = 1; i < ARRAY_SIZE; i++){
+                pot_sum += data[i].potentiometer_value;
+            }
+            double mean = pot_sum / ARRAY_SIZE;
+            //Find the last closest value 
+            int idx = 0;
+            double distance = abs(data[0].potentiometer_value - mean);
+            cur_variance_sum += distance;
+            for(int i = 1; i < ARRAY_SIZE; i++){
+                double cur_dist = abs(data[i].potentiometer_value - mean);
+                if(cur_dist <= distance){
+                    idx = i;
+                    distance = cur_dist;
+                }
+                cur_variance_sum += cur_dist;
+            }
+            loop_var = idx; //Doesn't technically delete it, but will replace the values in data[loop_var] so it is good enough
         }
         //----------------------------------------------------------------------------------------------------
 
