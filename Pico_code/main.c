@@ -10,7 +10,7 @@
 #define POTENTIOMETER_PIN 26  // GPIO pin connected to the potentiometer
 #define BUTTON_PIN 15         // GPIO pin connected to the push button
 #define LED_PIN 25
-#define ARRAY_SIZE 500       // Number of readings to store
+#define ARRAY_SIZE 16000       // Number of readings to store - 6370  entries to make DUMP take 1s - 3140 entries to make SELECT * ORDER BY time take 1s
 // Buffer size for the input string
 #define BUFFER_SIZE 128
 #define MS_BT_LOOP 100
@@ -200,7 +200,7 @@ int main(){
         }
         //If the message is TIME send the current loop duration - may be useful for synchronizing the epochs
         if((read_until == 4) && !(buf_comp(timemsg, input_buffer, read_until))){
-            printf("Loop Time: %u %u %u\n", loop_time, loop_end, loop_start);
+            printf("Loop Time: %u\n", loop_time);
         }
         //If the message is DUMP send the data - may be useful for debugging and such
         if((read_until == 4) && !(buf_comp(dumpmsg, input_buffer, read_until))){
@@ -209,10 +209,13 @@ int main(){
             //     printf("Current variance sum: %f\n", cur_variance_sum);
             // }
             printf("Dumping %d lines\nTime: %u\n", arr_len, ms_used);
+            uint32_t before_dump = time_us_32();
             for(int i = 0; i < arr_len; i++){
                 printf("Index: %d\tTimestamp: %u\tPotentiometer %u\tButton: %d\tLED: %d\n",
                 i, data[i].ms_time, data[i].potentiometer_value, data[i].button_pressed, data[i].led_on);
             }
+            uint32_t dump = time_us_32() - before_dump;
+            printf("Time to print %u", dump);
         }
         //Else determine if it is a query - only so much checking I'm going to do here
         if((read_until > 6) && !(buf_comp(querymsg, input_buffer, 6))){
@@ -721,6 +724,8 @@ int main(){
                 }
                 printf("\n");
             }
+            uint32_t query_time = time_us_32() - loop_start;
+            printf("Time to query: %u\n", query_time);
         }
         //After all the logic is done, reset the values so that the logic is only parsed once per new SQL statement
         select = false;
